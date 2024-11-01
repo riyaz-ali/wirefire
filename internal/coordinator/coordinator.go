@@ -24,8 +24,8 @@ const (
 	UnsupportedClientVersionMessage = "wirefire only support client version >= 1.48.0, please upgrade your client"
 )
 
-// NewHandler returns a new http.Handler that implement Tailscale's 2021 Noise-based REST protocol
-func NewHandler(serverKey key.MachinePrivate) http.HandlerFunc {
+// Upgrade returns a new http.Handler that implement Tailscale's 2021 Noise-based REST protocol
+func Upgrade(serverKey key.MachinePrivate) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		conn, err := controlhttp.AcceptHTTP(req.Context(), w, req, serverKey, nil)
 		if err != nil {
@@ -42,7 +42,8 @@ func NewHandler(serverKey key.MachinePrivate) http.HandlerFunc {
 		r.Use(stock.NoCache, stock.Recoverer)
 		r.Use(hlog.NewHandler(logger), NewAccessLog(conn.Peer()))
 
-		r.Handle("/", r.NotFoundHandler())
+		r.Method(http.MethodPost, "/machine/register", MachineRegister(conn.Peer()))
+		r.Method(http.MethodPost, "/machine/map", MachineMap(conn.Peer()))
 
 		// h2c protocol (un-encrypted http2 over http/1) is used over a Noise authenticated channel
 		srv := &http.Server{Handler: h2c.NewHandler(r, &http2.Server{})}
