@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"crawshaw.io/sqlite/sqlitex"
 	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	stock "github.com/go-chi/chi/v5/middleware"
+	"github.com/riyaz-ali/wirefire/internal/config"
+	"github.com/riyaz-ali/wirefire/internal/coordinator"
+	"github.com/riyaz-ali/wirefire/internal/database/schema"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	flag "github.com/spf13/pflag"
@@ -19,31 +23,43 @@ import (
 	"syscall"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
-	"wirefire/internal/coordinator"
 )
 
-func init() {
-	// flags related to http endpoint configuration
-	flag.String("http.host", "127.0.0.1", "http port to bind to")
-	flag.Int("http.port", 8080, "http port to bind to")
-	flag.Bool("http.debug", false, "enable /debug http endpoint")
+// WirefireConfig is the base configuration for the core coordination service.
+type WirefireConfig struct {
+	Key string `viper:"key"`
 
-	// system settings
-	flag.String("key", "", "coordination server's private key")
+	HTTP struct {
+		Host  string `viper:"http.host" default:"127.0.0.1"`
+		Port  int    `viper:"http.port" default:"8080"`
+		Debug bool   `viper:"http.debug"`
+	}
 
-	// flag related to logging
-	flag.Bool("log.verbose", false, "enable verbose log output")
+	Database struct {
+		URL string `viper:"database.url"`
+	}
+
+	Log struct {
+		Level zerolog.Level `viper:"log.level" default:"info"`
+	}
 }
 
 func main() {
 	var err error
 
+	var configFile = flag.String("config", "config.yaml", "path to configuration file")
+	flag.Parse()
+
+	viper.SetConfigFile(*configFile)
+	if err = viper.ReadInConfig(); err != nil {
+		log.Fatal().Err(err).Msg("failed to read configuration file")
+	}
+	viper.AutomaticEnv() // override with any environment variables
+
+	cfg := config.Read[WirefireConfig]() // read in the configuration value
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGKILL, syscall.SIGTERM)
 	defer stop()
-
-	flag.Parse()
-	viper.AutomaticEnv()
-	_ = viper.BindPFlags(flag.CommandLine)
 
 	var logger zerolog.Logger
 	{
@@ -52,42 +68,51 @@ func main() {
 			out = zerolog.ConsoleWriter{Out: os.Stdout}
 		}
 
-		logger = zerolog.New(out).Level(zerolog.InfoLevel).With().Timestamp().Logger()
+		logger = zerolog.New(out).Level(cfg.Log.Level).With().Timestamp().Logger()
 		ctx = logger.WithContext(ctx) // associate default logger with root context
-
-		if viper.IsSet("log.verbose") && viper.GetBool("log.verbose") { // configure verbose logging
-			logger = logger.Level(zerolog.DebugLevel)
-		}
 
 		log.Logger = logger // set as default logger
 	}
 
-	if !viper.IsSet("key") {
+	var serverKey key.MachinePrivate // key must start with privkey:
+	if cfg.Key == "" {
 		log.Fatal().Msg("missing coordination server's private key")
-	}
-
-	var serverKey key.MachinePrivate
-	if serverKey, err = ParsePrivateKey(viper.GetString("key")); err != nil {
+	} else if err = serverKey.UnmarshalText([]byte(cfg.Key)); err != nil {
 		log.Fatal().Err(err).Msg("failed to parse server's private key")
 	}
+
+	var pool *sqlitex.Pool
+	{ // open and set up the database
+		if pool, err = sqlitex.Open(cfg.Database.URL, 0 /* no additional flags */, 4); err != nil {
+			log.Fatal().Err(err).Msg("failed to open database")
+		}
+
+		conn := pool.Get(ctx)
+		if err = schema.Apply(conn); err != nil {
+			log.Fatal().Err(err).Msg("failed to apply schema migration")
+		}
+		pool.Put(conn)
+	}
+
+	defer func() { _ = pool.Close() }() // close when server terminates
 
 	// create new router with a set of stock middlewares registered
 	r := chi.NewRouter()
 	r.Use(stock.NoCache, stock.Recoverer, stock.RequestID)
 
-	r.Handle("/ts2021", coordinator.NewHandler(serverKey))
 	r.Get("/key", KeyHandler(serverKey))
+	r.Handle("/ts2021", coordinator.Upgrade(serverKey))
 
 	// mount profiler endpoints to /debug
-	if viper.IsSet("http.debug") && viper.GetBool("http.debug") {
+	if cfg.HTTP.Debug {
 		r.Mount("/debug", stock.Profiler())
 	}
 
-	addr := fmt.Sprintf("%s:%d", viper.GetString("http.host"), viper.GetInt("http.port"))
+	addr := fmt.Sprintf("%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
 	srv := &http.Server{Addr: addr, Handler: r, BaseContext: func(_ net.Listener) context.Context { return ctx }}
 
 	log.Info().Str("addr", addr).Msg("starting http server")
-	if err = srv.ListenAndServeTLS("./.certs/cert.pem", "./.certs/key.pem"); err != nil {
+	if err = srv.ListenAndServeTLS("./cert.pem", "./key.pem"); err != nil {
 		log.Fatal().Err(err).Send()
 	}
 }
