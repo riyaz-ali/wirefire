@@ -12,19 +12,26 @@ import (
 func Read[T any]() *T {
 	// used below to check if a custom type implements encoding.TextUnmarshaler
 	textUnmarshal := reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+	binaryUnmarshal := reflect.TypeOf((*encoding.BinaryUnmarshaler)(nil)).Elem()
 
 	var decodeField func(value reflect.Value, field reflect.StructField)
 	decodeField = func(value reflect.Value, field reflect.StructField) {
 		if key, ok := field.Tag.Lookup("viper"); ok || (!ok && value.Kind() == reflect.Struct /* embedded structs */) {
-			// For types that implement encoding.TextUnmarshaler, we delegate parsing to
-			// UnmarshalText() function of the type.
-			if ok && value.Addr().Type().Implements(textUnmarshal) {
+			// For types that implement encoding.TextUnmarshaler or encoding.BinaryUnmarshaler,
+			// we delegate parsing to UnmarshalText() or UnmarshalBinary() function of the type.
+			if ok && (value.Addr().Type().Implements(textUnmarshal) || value.Addr().Type().Implements(binaryUnmarshal)) {
 				txt := viper.GetString(key)
 				if def, exists := field.Tag.Lookup("default"); (!viper.IsSet(key) || len(txt) == 0) && exists {
 					txt = def
 				}
 
-				_ = value.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(txt))
+				if tm, ok := value.Addr().Interface().(encoding.TextUnmarshaler); ok {
+					_ = tm.UnmarshalText([]byte(txt))
+				} else if bm, ok := value.Addr().Interface().(encoding.BinaryUnmarshaler); ok {
+					_ = bm.UnmarshalBinary([]byte(txt))
+				}
+
+				return
 			}
 
 			switch value.Kind() {
@@ -65,6 +72,13 @@ func Read[T any]() *T {
 						decodeField(nestedField, value.Type().Field(j))
 					}
 				}
+			case reflect.Ptr:
+				if value.IsNil() { // allocate a new object of the appropriate type
+					value.Set(reflect.New(value.Type().Elem()))
+				}
+
+				decodeField(value.Elem(), field)
+
 			default:
 				panic(errors.Errorf("unknown type %s", value.Kind()))
 			}
