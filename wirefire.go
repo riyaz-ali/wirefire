@@ -11,6 +11,7 @@ import (
 	"github.com/riyaz-ali/wirefire/internal/config"
 	"github.com/riyaz-ali/wirefire/internal/coordinator"
 	"github.com/riyaz-ali/wirefire/internal/database/schema"
+	"github.com/riyaz-ali/wirefire/internal/oidc"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
@@ -110,6 +111,7 @@ func main() {
 
 	r.Get("/key", KeyHandler(serverKey))
 	r.Handle("/ts2021", coordinator.Upgrade(serverKey, pool))
+	r.Mount("/oidc", oidc.Handler(ctx, pool))
 
 	// mount profiler endpoints to /debug
 	// r.Mount("/debug", stock.Profiler())

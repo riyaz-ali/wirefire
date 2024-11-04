@@ -2,6 +2,7 @@
 package coordinator
 
 import (
+	"crawshaw.io/sqlite/sqlitex"
 	"github.com/go-chi/chi/v5"
 	stock "github.com/go-chi/chi/v5/middleware"
 	"github.com/pkg/errors"
@@ -12,6 +13,7 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"io"
 	"net/http"
+	"net/url"
 	"tailscale.com/control/controlhttp"
 	"tailscale.com/net/netutil"
 	"tailscale.com/types/key"
@@ -24,8 +26,14 @@ const (
 	UnsupportedClientVersionMessage = "wirefire only support client version >= 1.48.0, please upgrade your client"
 )
 
+// Config is the subset of configuration relevant to the coordinator server
+type Config struct {
+	// BaseUrl is the url (optionally public) on which the coordinator is available
+	BaseUrl *url.URL `viper:"server.url" validation:"required"`
+}
+
 // Upgrade returns a new http.Handler that implement Tailscale's 2021 Noise-based REST protocol
-func Upgrade(serverKey key.MachinePrivate) http.HandlerFunc {
+func Upgrade(serverKey key.MachinePrivate, pool *sqlitex.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		conn, err := controlhttp.AcceptHTTP(req.Context(), w, req, serverKey, nil)
 		if err != nil {
@@ -42,7 +50,7 @@ func Upgrade(serverKey key.MachinePrivate) http.HandlerFunc {
 		r.Use(stock.NoCache, stock.Recoverer)
 		r.Use(hlog.NewHandler(logger), NewAccessLog(conn.Peer()))
 
-		r.Method(http.MethodPost, "/machine/register", MachineRegister(conn.Peer()))
+		r.Method(http.MethodPost, "/machine/register", MachineRegister(conn.Peer(), pool))
 		r.Method(http.MethodPost, "/machine/map", MachineMap(conn.Peer()))
 
 		// h2c protocol (un-encrypted http2 over http/1) is used over a Noise authenticated channel
