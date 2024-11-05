@@ -29,8 +29,10 @@ func FetchMany[M any](conn *sqlite.Conn, query Q[M]) (_ []*M, err error) {
 	}
 	defer finalize(stmt, &err) // always finalize to prevent resource leaks
 
-	if err = query.Bind(stmt); err != nil { // bind all variables to the statement
-		return nil, err
+	if stmt.BindParamCount() > 0 {
+		if err = query.Bind(stmt); err != nil { // bind all variables to the statement
+			return nil, err
+		}
 	}
 
 	var result, has = make([]*M, 0), false
@@ -53,8 +55,10 @@ func FetchOne[M any](conn *sqlite.Conn, query Q[M]) (_ *M, err error) {
 	}
 	defer finalize(stmt, &err) // always finalize to prevent resource leaks
 
-	if err = query.Bind(stmt); err != nil { // bind all variables to the statement
-		return nil, err
+	if stmt.BindParamCount() > 0 {
+		if err = query.Bind(stmt); err != nil { // bind all variables to the statement
+			return nil, err
+		}
 	}
 
 	var has = false

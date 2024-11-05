@@ -130,10 +130,6 @@ func scan(stmt *sqlite.Stmt, i int, value reflect.Value, useJson bool) error {
 
 	// for types that support database/sql.Scanner interface
 	if scanner, ok := value.Addr().Interface().(sql.Scanner); ok {
-		if stmt.ColumnLen(i) == 0 {
-			return scanner.Scan(nil)
-		}
-
 		var buf = make([]byte, stmt.ColumnLen(i))
 		stmt.ColumnBytes(i, buf)
 
@@ -162,54 +158,57 @@ func scan(stmt *sqlite.Stmt, i int, value reflect.Value, useJson bool) error {
 	// For symmetry, also check for string destination types.
 	src := stmt.ColumnText(i)
 
-	switch dv := reflect.Indirect(value); dv.Kind() {
+	switch value.Kind() {
 	case reflect.Pointer:
 		if columnType == sqlite.SQLITE_NULL || src == "" {
-			dv.SetZero()
+			value.Set(reflect.Zero(value.Type())) // set to nil pointer
 			return nil
 		} else {
-			dv.Set(reflect.New(dv.Type().Elem())) // if the value is a pointer type, we allocate it
-			return scan(stmt, i, reflect.ValueOf(dv.Interface()), useJson)
+			if value.IsNil() { // allocate value for pointer
+				value.Set(reflect.New(value.Type().Elem()))
+			}
+
+			return scan(stmt, i, reflect.Indirect(value), useJson)
 		}
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		if columnType == sqlite.SQLITE_NULL || src == "" {
-			return fmt.Errorf("failed to convert null to a %s", dv.Kind())
+			return fmt.Errorf("failed to convert null to a %s", value.Kind())
 		}
 
-		i64, err := strconv.ParseInt(src, 10, dv.Type().Bits())
+		i64, err := strconv.ParseInt(src, 10, value.Type().Bits())
 		if err != nil {
-			return fmt.Errorf("failed to convert string to a %s: %v", dv.Kind(), err)
+			return fmt.Errorf("failed to convert string to a %s: %v", value.Kind(), err)
 		}
-		dv.SetInt(i64)
+		value.SetInt(i64)
 		return nil
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		if columnType == sqlite.SQLITE_NULL || src == "" {
-			return fmt.Errorf("failed to convert null to a %s", dv.Kind())
+			return fmt.Errorf("failed to convert null to a %s", value.Kind())
 		}
 
-		u64, err := strconv.ParseUint(src, 10, dv.Type().Bits())
+		u64, err := strconv.ParseUint(src, 10, value.Type().Bits())
 		if err != nil {
-			return fmt.Errorf("failed to convert string to a %s: %v", dv.Kind(), err)
+			return fmt.Errorf("failed to convert string to a %s: %v", value.Kind(), err)
 		}
-		dv.SetUint(u64)
+		value.SetUint(u64)
 		return nil
 
 	case reflect.Float32, reflect.Float64:
 		if columnType == sqlite.SQLITE_NULL || src == "" {
-			return fmt.Errorf("failed to convert null to a %s", dv.Kind())
+			return fmt.Errorf("failed to convert null to a %s", value.Kind())
 		}
 
-		f64, err := strconv.ParseFloat(src, dv.Type().Bits())
+		f64, err := strconv.ParseFloat(src, value.Type().Bits())
 		if err != nil {
-			return fmt.Errorf("failed to convert string to a %s: %v", dv.Kind(), err)
+			return fmt.Errorf("failed to convert string to a %s: %v", value.Kind(), err)
 		}
-		dv.SetFloat(f64)
+		value.SetFloat(f64)
 		return nil
 
 	case reflect.String:
-		dv.SetString(src)
+		value.SetString(src)
 		return nil
 	}
 
