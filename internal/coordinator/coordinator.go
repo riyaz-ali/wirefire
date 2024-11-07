@@ -47,7 +47,7 @@ func Upgrade(serverKey key.MachinePrivate, pool *sqlitex.Pool) http.HandlerFunc 
 
 		r := chi.NewRouter()
 		r.Use(stock.NoCache, stock.Recoverer)
-		r.Use(hlog.NewHandler(logger))
+		r.Use(hlog.NewHandler(logger), NewAccessLog(conn.Peer()))
 
 		r.Method(http.MethodPost, "/machine/register", MachineRegister(conn.Peer(), pool))
 		r.Method(http.MethodPost, "/machine/map", MachineMap(conn.Peer(), pool))

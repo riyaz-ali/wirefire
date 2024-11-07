@@ -111,16 +111,8 @@ func MachineRegister(peer key.MachinePublic, pool *sqlitex.Pool) util.HandlerFun
 			// indicated expiry in the request has passed
 			if !req.Expiry.IsZero() && req.Expiry.Before(time.Now()) {
 				log.Debug().Msgf("requested expiry %s has passed; expiring machine key", req.Expiry)
-				machine.ExpiresAt = req.Expiry // reset expiry and save (delete in case machine is ephemeral)
-
-				if machine.Ephemeral {
-					if _, err = database.Exec(conn, domain.DeleteNode(machine)); err != nil {
-						return nil, err
-					}
-				} else {
-					if _, err = database.Exec(conn, domain.ExpireNode(machine, req.Expiry)); err != nil {
-						return nil, err
-					}
+				if _, err = database.Exec(conn, domain.DeleteNode(machine)); err != nil {
+					return nil, err
 				}
 
 				return &tailcfg.RegisterResponse{NodeKeyExpired: true}, nil

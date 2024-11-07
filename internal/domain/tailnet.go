@@ -96,7 +96,7 @@ func ListMachines(t *Tailnet) database.Q[Machine] {
 		QueryStr: `
 			SELECT m.*, 
 			       json_object('ID', t.id, 'Name', t.name, 'Acl', t.acl) AS tailnet, 
-			       json_object('ID', u.id, 'Name', u.name) AS user,
+			       json_object('ID', u.id, 'Subject', u.sub, 'Name', u.name, 'Claims', json(u.claims), 'CreatedAt', u.created_at) AS user,
 			       tailnet_members.role AS role
 			FROM machines m
 				INNER JOIN tailnets t ON m.tailnet_id = t.id

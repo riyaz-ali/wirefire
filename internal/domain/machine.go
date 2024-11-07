@@ -155,7 +155,7 @@ func SaveMachine(m *Machine) database.I[Machine, *Machine] {
 			    created_at
 				expires_at,
 			    last_seen,
-				(SELECT json_object('ID', id, 'Name', name) FROM users WHERE users.id = machines.user_id) AS user,
+				(SELECT json_object('ID', id, 'Subject', sub, 'Name', name, 'Claims', json(claims), 'CreatedAt', created_at) FROM users WHERE users.id = machines.user_id) AS user,
 				(SELECT json_object('ID', id, 'Name', name, 'Acl', acl) FROM tailnets WHERE tailnets.id = machines.tailnet_id) AS tailnet
 		`,
 
@@ -207,7 +207,7 @@ func GetMachineByKey(k key.MachinePublic) database.Q[Machine] {
 		QueryStr: `
 			SELECT m.*, 
 			       json_object('ID', t.id, 'Name', t.name, 'Acl', t.acl, 'CreatedAt', t.created_at, 'UpdatedAt', t.updated_at) AS tailnet, 
-			       json_object('ID', u.id, 'Name', u.name, 'CreatedAt', u.created_at) AS user 
+			       json_object('ID', u.id, 'Subject', u.sub, 'Name', u.name, 'Claims', json(u.claims), 'CreatedAt', u.created_at) AS user 
 			FROM machines m
 				INNER JOIN tailnets t ON m.tailnet_id = t.id
 				INNER JOIN users    u ON m.user_id    = u.id
