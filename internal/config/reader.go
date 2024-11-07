@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/viper"
 	"reflect"
 	"strconv"
+	"strings"
 )
 
 // Read reads configuration values into the provided struct type using Viper and reflection.
@@ -16,7 +17,7 @@ func Read[T any]() *T {
 
 	var decodeField func(value reflect.Value, field reflect.StructField)
 	decodeField = func(value reflect.Value, field reflect.StructField) {
-		if key, ok := field.Tag.Lookup("viper"); ok || (!ok && value.Kind() == reflect.Struct /* embedded structs */) {
+		if key, ok := field.Tag.Lookup("viper"); ok || (!ok && (value.Kind() == reflect.Struct || value.Kind() == reflect.Ptr)) {
 			// For types that implement encoding.TextUnmarshaler or encoding.BinaryUnmarshaler,
 			// we delegate parsing to UnmarshalText() or UnmarshalBinary() function of the type.
 			if ok && (value.Addr().Type().Implements(textUnmarshal) || value.Addr().Type().Implements(binaryUnmarshal)) {
@@ -67,11 +68,52 @@ func Read[T any]() *T {
 					}
 				}
 			case reflect.Struct: // to support nested struct config
-				for j := 0; j < value.NumField(); j++ {
-					if nestedField := value.Field(j); nestedField.CanSet() {
-						decodeField(nestedField, value.Type().Field(j))
+				if ok {
+					value.Set(reflect.ValueOf(viper.Get(key)))
+				} else {
+					for j := 0; j < value.NumField(); j++ {
+						if nestedField := value.Field(j); nestedField.CanSet() {
+							decodeField(nestedField, value.Type().Field(j))
+						}
 					}
 				}
+
+			case reflect.Slice:
+				for i := 0; i < value.Len(); i++ {
+					decodeField(value.Index(i), field)
+				}
+
+				// Handle slice of strings, integers, and floats, separated by comma
+				if def, exists := field.Tag.Lookup("default"); exists && value.Len() == 0 {
+					var defValues []reflect.Value
+					sliceType := value.Type().Elem().Kind()
+
+					for _, s := range strings.Split(def, ",") {
+						switch sliceType {
+						case reflect.String:
+							defValues = append(defValues, reflect.ValueOf(s))
+						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+							if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+								defValues = append(defValues, reflect.ValueOf(v).Convert(value.Type().Elem()))
+							}
+						case reflect.Bool:
+							if v, err := strconv.ParseBool(s); err == nil {
+								defValues = append(defValues, reflect.ValueOf(v))
+							}
+						case reflect.Float32, reflect.Float64:
+							if v, err := strconv.ParseFloat(s, 64); err == nil {
+								defValues = append(defValues, reflect.ValueOf(v).Convert(value.Type().Elem()))
+							}
+						}
+					}
+
+					newSlice := reflect.MakeSlice(value.Type(), len(defValues), len(defValues))
+					for i := 0; i < len(defValues); i++ {
+						newSlice.Index(i).Set(defValues[i])
+					}
+					value.Set(newSlice)
+				}
+
 			case reflect.Ptr:
 				if value.IsNil() { // allocate a new object of the appropriate type
 					value.Set(reflect.New(value.Type().Elem()))

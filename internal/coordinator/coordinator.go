@@ -17,7 +17,6 @@ import (
 	"tailscale.com/control/controlhttp"
 	"tailscale.com/net/netutil"
 	"tailscale.com/types/key"
-	"time"
 )
 
 const (
@@ -48,10 +47,10 @@ func Upgrade(serverKey key.MachinePrivate, pool *sqlitex.Pool) http.HandlerFunc 
 
 		r := chi.NewRouter()
 		r.Use(stock.NoCache, stock.Recoverer)
-		r.Use(hlog.NewHandler(logger), NewAccessLog(conn.Peer()))
+		r.Use(hlog.NewHandler(logger))
 
 		r.Method(http.MethodPost, "/machine/register", MachineRegister(conn.Peer(), pool))
-		r.Method(http.MethodPost, "/machine/map", MachineMap(conn.Peer()))
+		r.Method(http.MethodPost, "/machine/map", MachineMap(conn.Peer(), pool))
 
 		// h2c protocol (un-encrypted http2 over http/1) is used over a Noise authenticated channel
 		srv := &http.Server{Handler: h2c.NewHandler(r, &http2.Server{})}
@@ -64,11 +63,17 @@ func Upgrade(serverKey key.MachinePrivate, pool *sqlitex.Pool) http.HandlerFunc 
 	}
 }
 
-// NewAccessLog returns a new middleware that sends its log output to the provided zerolog sink at the end of each request
+// NewAccessLog returns a new middleware that sends its log output to the provided zerolog sink.
+//
+// The log is sent at the start of the request itself as /machine endpoints can engage in
+// long-running operations, and we don't want to wait till the end to emit a log.
 func NewAccessLog(peer key.MachinePublic) func(next http.Handler) http.Handler {
-	return hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
-		sink := zerolog.Ctx(r.Context())
-		sink.Info().Str("peer", peer.String()).Str("method", r.Method).
-			Str("path", r.URL.Path).Int("status", status).Send()
-	})
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sink := zerolog.Ctx(r.Context())
+			sink.Info().Str("peer", peer.String()).Str("method", r.Method).Str("path", r.URL.Path).Send()
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }

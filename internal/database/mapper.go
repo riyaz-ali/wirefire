@@ -130,6 +130,10 @@ func scan(stmt *sqlite.Stmt, i int, value reflect.Value, useJson bool) error {
 
 	// for types that support database/sql.Scanner interface
 	if scanner, ok := value.Addr().Interface().(sql.Scanner); ok {
+		if stmt.ColumnLen(i) == 0 {
+			return scanner.Scan(nil)
+		}
+
 		var buf = make([]byte, stmt.ColumnLen(i))
 		stmt.ColumnBytes(i, buf)
 

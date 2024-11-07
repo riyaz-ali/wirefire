@@ -11,6 +11,7 @@ import (
 	"github.com/riyaz-ali/wirefire/internal/config"
 	"github.com/riyaz-ali/wirefire/internal/coordinator"
 	"github.com/riyaz-ali/wirefire/internal/database/schema"
+	"github.com/riyaz-ali/wirefire/internal/derp"
 	"github.com/riyaz-ali/wirefire/internal/oidc"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -48,6 +49,12 @@ type WirefireConfig struct {
 	Log struct {
 		// Level is a zerolog.Level value, must be oneof:trace debug info warn error fatal panic
 		Level zerolog.Level `viper:"log.level" default:"info" validate:"loglevel"`
+	}
+
+	DERP struct {
+		// Sources is a list of URLs to fetch the derp map information from.
+		// The default value uses the official Tailscale DERP service
+		Sources []string `viper:"derp.sources" default:"https://login.tailscale.com/derpmap/default"`
 	}
 }
 
@@ -104,6 +111,13 @@ func main() {
 	}
 
 	defer func() { _ = pool.Close() }() // close when server terminates
+
+	// load and set default derp map from official tailscale service
+	if derpMap, err := derp.Load(cfg.DERP.Sources); err != nil {
+		log.Fatal().Err(err).Msg("failed to load derp sources")
+	} else {
+		viper.Set("derp.map", derpMap) // available for use from this point onwards
+	}
 
 	// create new router with a set of stock middlewares registered
 	r := chi.NewRouter()

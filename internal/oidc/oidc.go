@@ -272,7 +272,7 @@ func createMachine(conn *sqlite.Conn, user *domain.User, tailnet *domain.Tailnet
 		TailnetID: tailnet.ID,
 		Tailnet:   tailnet,
 		UserID:    user.ID,
-		User:      user,
+		Owner:     user,
 	}
 
 	// TODO(@riyaz): verify data.Hostinfo.RequestTags to ensure user has required permissions to apply those tags

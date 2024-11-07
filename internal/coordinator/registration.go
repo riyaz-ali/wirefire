@@ -149,15 +149,15 @@ func MachineRegister(peer key.MachinePublic, pool *sqlitex.Pool) util.HandlerFun
 			return &tailcfg.RegisterResponse{
 				MachineAuthorized: true,
 				User: tailcfg.User{
-					ID:          tailcfg.UserID(machine.User.ID),
-					LoginName:   machine.User.Name,
-					DisplayName: machine.User.Name,
-					Created:     machine.User.CreatedAt,
+					ID:          tailcfg.UserID(machine.Owner.ID),
+					LoginName:   machine.Owner.Name,
+					DisplayName: machine.Owner.Name,
+					Created:     machine.Owner.CreatedAt,
 				},
 				Login: tailcfg.Login{
-					ID:          tailcfg.LoginID(machine.User.ID),
-					LoginName:   machine.User.Name,
-					DisplayName: machine.User.Name,
+					ID:          tailcfg.LoginID(machine.Owner.ID),
+					LoginName:   machine.Owner.Name,
+					DisplayName: machine.Owner.Name,
 				},
 			}, nil
 		}

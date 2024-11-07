@@ -5,6 +5,7 @@ import (
 	"crawshaw.io/sqlite"
 	"encoding/json"
 	"github.com/riyaz-ali/wirefire/internal/database"
+	"tailscale.com/tailcfg"
 	"time"
 )
 
@@ -29,6 +30,13 @@ type User struct {
 	Claims  UserClaims `db:"claims,json"` // standard user claims present in the oidc token
 
 	CreatedAt time.Time `db:"created_at"`
+}
+
+func (u User) LoginName() string { return u.Subject }
+func (u User) Roles() []string   { return nil }
+
+func (u User) AsUserProfile() tailcfg.UserProfile {
+	return tailcfg.UserProfile{ID: tailcfg.UserID(u.ID), LoginName: u.Subject, DisplayName: u.Name}
 }
 
 // FindOrCreateUser returns a user or create a new one based the provided claims.
@@ -58,6 +66,19 @@ func UserBySubject(subject string) database.Q[User] {
 		QueryStr: "SELECT * FROM users WHERE sub = $1",
 		Bind: func(stmt *sqlite.Stmt) error {
 			stmt.BindText(1, subject)
+			return nil
+		},
+		Val: func(stmt *sqlite.Stmt) (*User, error) {
+			return database.ScanAs[User](stmt)
+		},
+	}
+}
+
+func ListMembers(tailnet int64) database.Q[User] {
+	return database.Q[User]{
+		QueryStr: "SELECT * FROM users u, tailnet_members m WHERE u.id = m.user_id AND m.tailnet_id = ?",
+		Bind: func(stmt *sqlite.Stmt) error {
+			stmt.BindInt64(1, tailnet)
 			return nil
 		},
 		Val: func(stmt *sqlite.Stmt) (*User, error) {

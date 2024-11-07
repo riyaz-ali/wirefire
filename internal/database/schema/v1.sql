@@ -68,7 +68,7 @@ CREATE TABLE machines
     id         INTEGER PRIMARY KEY,     -- auto-generated unique machine identifier
     name       TEXT NOT NULL,           -- machine's hostname
     name_idx   INTEGER   DEFAULT 0,     -- arbiter used as suffix to guarantee unique hostname within a given tailnet
-    noise_key  TEXT NOT NULL,           -- machine's public key used when establishing secure Noise channel over /ts2021
+    noise_key  TEXT NOT NULL UNIQUE,    -- machine's public key used when establishing secure Noise channel over /ts2021
     node_key   TEXT NOT NULL,           -- key used for wireguard tunnel and for communication over DERP
     disco_key  TEXT NOT NULL,           -- key used for peer-to-peer path discovery
     ephemeral  BOOLEAN   DEFAULT false, -- is the device ephemeral?
@@ -94,7 +94,3 @@ CREATE TABLE machines
 -- Index idx_tailnet_id_name is used when assigning name_idx to new machines.
 -- The value name_idx+1 is used if a machine with the same name already exists in the tailnet.
 CREATE UNIQUE INDEX idx_tailnet_id_name ON machines (tailnet_id, name, name_idx desc);
-
--- Index idx_noise_node_key is used inside /machine/map handler to locate a given machine
--- using its Noise+Node keys, as when we receive the request those are the only two inputs available to us (to locate the machine)
-CREATE UNIQUE INDEX idx_noise_node_key ON machines (noise_key, node_key);
