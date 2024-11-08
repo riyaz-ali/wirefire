@@ -36,7 +36,7 @@ var templates embed.FS
 type Config struct {
 	// Key is the coordination server's key.MachinePrivate key.
 	// We use the key's hash to secure our csrf tokens.
-	Key string `viper:"key"`
+	Key string `viper:"noise.private_key"`
 
 	// Provider is the address of the authentication server.
 	// The server must support /.well-known/openid-configuration endpoint

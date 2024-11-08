@@ -5,7 +5,6 @@ import (
 	"crawshaw.io/sqlite/sqlitex"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"github.com/go-chi/chi/v5"
 	stock "github.com/go-chi/chi/v5/middleware"
 	"github.com/riyaz-ali/wirefire/internal/config"
@@ -31,14 +30,11 @@ import (
 type WirefireConfig struct {
 	// Key is the coordination server's key.MachinePrivate key
 	// used for secure communication over Noise protocol
-	Key string `viper:"key"`
+	Key key.MachinePrivate `viper:"noise.private_key"`
 
 	Server struct {
 		// Addr is the listen address used by the coordination server
-		Addr string `viper:"server.host" default:"127.0.0.1"`
-
-		// Port is the tcp port used by the coordination server
-		Port int `viper:"server.port" default:"8000"`
+		Addr string `viper:"server.listen_addr" default:"127.0.0.1:8080"`
 	}
 
 	Database struct {
@@ -89,13 +85,6 @@ func main() {
 		log.Logger = logger // set as default logger
 	}
 
-	var serverKey key.MachinePrivate // key must start with privkey:
-	if cfg.Key == "" {
-		log.Fatal().Msg("missing coordination server's private key")
-	} else if err := serverKey.UnmarshalText([]byte(cfg.Key)); err != nil {
-		log.Fatal().Err(err).Msg("failed to parse server's private key")
-	}
-
 	var pool *sqlitex.Pool
 	{ // open and set up the database
 		var err error
@@ -123,18 +112,18 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(stock.NoCache, stock.Recoverer, stock.RequestID)
 
-	r.Get("/key", KeyHandler(serverKey))
-	r.Handle("/ts2021", coordinator.Upgrade(serverKey, pool))
+	r.Get("/key", KeyHandler(cfg.Key))
+	r.Handle("/ts2021", coordinator.Upgrade(cfg.Key, pool))
 	r.Mount("/oidc", oidc.Handler(ctx, pool))
 
 	// mount profiler endpoints to /debug
 	// r.Mount("/debug", stock.Profiler())
 
-	addr := fmt.Sprintf("%s:%d", cfg.Server.Addr, cfg.Server.Port)
+	addr := cfg.Server.Addr
 	srv := &http.Server{Addr: addr, Handler: r, BaseContext: func(_ net.Listener) context.Context { return ctx }}
 
 	log.Info().Str("addr", addr).Msg("starting http server")
-	if err := srv.ListenAndServeTLS("./cert.pem", "./key.pem"); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal().Err(err).Send()
 	}
 }
